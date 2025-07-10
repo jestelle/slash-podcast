@@ -10,7 +10,6 @@ dependencies = [
     "google-auth>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.1.0",
-    "google-generativeai>=0.8.3",
     "gradio>=5.5.0",
     "loguru>=0.7.2",
     "openai>=1.0.0",

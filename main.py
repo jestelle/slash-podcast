@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 from pypdf import PdfReader
 from tenacity import retry, retry_if_exception_type, wait_exponential, stop_after_attempt
 
-from google_docs import extract_text_from_google_docs
+from google_docs import extract_text_from_google_docs, create_google_oauth_url, authenticate_google_docs
 
 
 if sentry_dsn := os.getenv("SENTRY_DSN"):
@@ -27,6 +27,25 @@ if sentry_dsn := os.getenv("SENTRY_DSN"):
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# OAuth callback route
+@app.get("/oauth2callback")
+async def oauth_callback(code: str = None, error: str = None):
+    """Handle OAuth callback from Google"""
+    if error:
+        return {"error": error}
+    
+    if not code:
+        return {"error": "No authorization code received"}
+    
+    try:
+        authenticate_google_docs(code)
+        return {
+            "success": True,
+            "message": "Successfully authenticated with Google Docs! You can now close this window and return to the main application."
+        }
+    except Exception as e:
+        return {"error": f"Authentication failed: {str(e)}"}
 
 
 class DialogueItem(BaseModel):
@@ -66,6 +85,45 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             for chunk in response.iter_bytes():
                 file.write(chunk)
             return file.getvalue()
+
+
+def check_google_auth_status():
+    """Check if user is authenticated with Google Docs"""
+    try:
+        # Try to create a client - this will fail if not authenticated
+        from google_docs import GoogleDocsClient
+        client = GoogleDocsClient()
+        return "✅ Authenticated with Google Docs", True
+    except Exception as e:
+        if "OAuth authentication required" in str(e) or "Credentials file" in str(e):
+            return "❌ Not authenticated with Google Docs", False
+        else:
+            return f"❌ Error: {str(e)}", False
+
+
+def get_google_auth_url():
+    """Get Google OAuth URL for authentication"""
+    try:
+        auth_url = create_google_oauth_url()
+        return f"""
+        🔗 **Click the link below to authenticate with Google Docs:**
+        
+        [**Authenticate with Google Docs**]({auth_url})
+        
+        After clicking, you'll be redirected to Google's authorization page. 
+        Once you authorize, you'll be redirected back to this application.
+        """, auth_url
+    except Exception as e:
+        return f"❌ Error creating auth URL: {str(e)}", ""
+
+
+def handle_google_auth_callback(auth_code: str):
+    """Handle OAuth callback with authorization code"""
+    try:
+        authenticate_google_docs(auth_code)
+        return "✅ Successfully authenticated with Google Docs!"
+    except Exception as e:
+        return f"❌ Authentication failed: {str(e)}"
 
 
 def generate_audio_from_inputs(pdf_file, google_docs_url: str, openai_api_key: str = None):
@@ -198,44 +256,80 @@ def generate_audio(file_or_url: Union[str, Path], openai_api_key: str = None) ->
     return temporary_file.name, transcript
 
 
-demo = gr.Interface(
-    title="PDF to Podcast",
-    theme="origin",
-    description=Path("description.md").read_text(),
-    fn=generate_audio_from_inputs,
-    examples=[[str(p), "", None] for p in Path("examples").glob("*.pdf")],
-    inputs=[
-        gr.File(
-            label="PDF File (optional)",
-            visible=True,
-        ),
-        gr.Textbox(
-            label="Google Docs URL (optional)",
-            placeholder="https://docs.google.com/document/d/...",
-            visible=True,
-        ),
-        gr.Textbox(
-            label="OpenAI API Key",
-            visible=not os.getenv("OPENAI_API_KEY"),
-        ),
-    ],
-    outputs=[
-        gr.Audio(label="Audio", format="mp3"),
-        gr.Textbox(label="Transcript"),
-    ],
-    allow_flagging="never",
-    clear_btn=None,
-    head=os.getenv("HEAD", "") + Path("head.html").read_text(),
-    cache_examples="lazy",
-    api_name=False,
-)
+# Create the main interface
+with gr.Blocks(title="PDF to Podcast", theme="origin") as demo:
+    gr.HTML(Path("description.md").read_text())
+    
+    # Google Docs Authentication Section
+    with gr.Accordion("🔐 Google Docs Authentication", open=False):
+        gr.Markdown("""
+        **To use Google Docs, you need to authenticate first:**
+        1. Click "Check Auth Status" to see if you're already authenticated
+        2. If not authenticated, click "Get Auth URL" to get the authorization link
+        3. Click the link to authorize with Google
+        4. You'll be redirected back automatically after authorization
+        """)
+        
+        with gr.Row():
+            auth_status_btn = gr.Button("Check Auth Status", variant="secondary")
+            auth_url_btn = gr.Button("Get Auth URL", variant="secondary")
+        
+        auth_status_output = gr.Markdown("Click 'Check Auth Status' to see your authentication status")
+        auth_url_output = gr.Markdown("Click 'Get Auth URL' to get the authorization link")
+    
+    # Main Content Section
+    with gr.Row():
+        with gr.Column():
+            pdf_file = gr.File(
+                label="PDF File (optional)",
+                visible=True,
+            )
+            google_docs_url = gr.Textbox(
+                label="Google Docs URL (optional)",
+                placeholder="https://docs.google.com/document/d/...",
+                visible=True,
+            )
+            openai_api_key = gr.Textbox(
+                label="OpenAI API Key",
+                visible=not os.getenv("OPENAI_API_KEY"),
+            )
+            submit_btn = gr.Button("Generate Podcast", variant="primary")
+        
+        with gr.Column():
+            audio_output = gr.Audio(label="Audio", format="mp3")
+            transcript_output = gr.Textbox(label="Transcript", lines=10)
+    
+    # Examples
+    gr.Examples(
+        examples=[[str(p), "", None] for p in Path("examples").glob("*.pdf")],
+        inputs=[pdf_file, google_docs_url, openai_api_key]
+    )
+    
+    # Event handlers
+    auth_status_btn.click(
+        fn=check_google_auth_status,
+        outputs=auth_status_output
+    )
+    
+    auth_url_btn.click(
+        fn=get_google_auth_url,
+        outputs=auth_url_output
+    )
+    
+    submit_btn.click(
+        fn=generate_audio_from_inputs,
+        inputs=[pdf_file, google_docs_url, openai_api_key],
+        outputs=[audio_output, transcript_output]
+    )
 
 
-demo = demo.queue(
+# Configure the demo
+demo.queue(
     max_size=20,
     default_concurrency_limit=20,
 )
 
+# Mount the app
 app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":

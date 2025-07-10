@@ -28,8 +28,8 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# OAuth callback route
-@app.get("/oauth2callback")
+# OAuth callback route - using a different path to avoid conflicts
+@app.get("/api/oauth2callback")
 async def oauth_callback(code: str = None, error: str = None):
     """Handle OAuth callback from Google"""
     if error:

@@ -19,7 +19,7 @@ class GoogleDocsClient:
     
     def __init__(self, credentials_path: Optional[str] = None, redirect_uri: Optional[str] = None):
         self.credentials_path = credentials_path or 'credentials.json'
-        self.redirect_uri = redirect_uri or 'http://localhost:7860/oauth2callback'
+        self.redirect_uri = redirect_uri or 'http://localhost:7860/api/oauth2callback'
         self.service = None
         self._authenticate()
     
@@ -181,7 +181,7 @@ def create_google_oauth_url(credentials_path: Optional[str] = None) -> str:
     flow = Flow.from_client_secrets_file(
         credentials_path,
         scopes=['https://www.googleapis.com/auth/documents.readonly'],
-        redirect_uri='http://localhost:7860/oauth2callback'
+        redirect_uri='http://localhost:7860/api/oauth2callback'
     )
     
     authorization_url, state = flow.authorization_url(
@@ -202,7 +202,7 @@ def authenticate_google_docs(authorization_code: str, credentials_path: Optional
     flow = Flow.from_client_secrets_file(
         credentials_path,
         scopes=['https://www.googleapis.com/auth/documents.readonly'],
-        redirect_uri='http://localhost:7860/oauth2callback'
+        redirect_uri='http://localhost:7860/api/oauth2callback'
     )
     
     flow.fetch_token(code=authorization_code)

@@ -1,11 +1,11 @@
 import os
 import re
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse, parse_qs
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from loguru import logger
@@ -17,8 +17,9 @@ class GoogleDocsClient:
     # If modifying these scopes, delete the file token.json.
     SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
     
-    def __init__(self, credentials_path: Optional[str] = None):
+    def __init__(self, credentials_path: Optional[str] = None, redirect_uri: Optional[str] = None):
         self.credentials_path = credentials_path or 'credentials.json'
+        self.redirect_uri = redirect_uri or 'http://localhost:7860/oauth2callback'
         self.service = None
         self._authenticate()
     
@@ -39,16 +40,52 @@ class GoogleDocsClient:
                         f"Credentials file '{self.credentials_path}' not found. "
                         "Please download it from Google Cloud Console."
                     )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_path, self.SCOPES
+                
+                # For web applications, we need to handle OAuth differently
+                # This will be handled by the web interface
+                raise Exception(
+                    "OAuth authentication required. Please use the web interface to authenticate."
                 )
-                creds = flow.run_local_server(port=0)
-            
-            # Save the credentials for the next run
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
         
         self.service = build('docs', 'v1', credentials=creds)
+        logger.info("Successfully authenticated with Google Docs API")
+    
+    def create_oauth_url(self) -> str:
+        """Create OAuth URL for web application"""
+        if not os.path.exists(self.credentials_path):
+            raise FileNotFoundError(f"Credentials file '{self.credentials_path}' not found.")
+        
+        flow = Flow.from_client_secrets_file(
+            self.credentials_path,
+            scopes=self.SCOPES,
+            redirect_uri=self.redirect_uri
+        )
+        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+        
+        return authorization_url
+    
+    def exchange_code_for_token(self, authorization_code: str) -> None:
+        """Exchange authorization code for access token"""
+        if not os.path.exists(self.credentials_path):
+            raise FileNotFoundError(f"Credentials file '{self.credentials_path}' not found.")
+        
+        flow = Flow.from_client_secrets_file(
+            self.credentials_path,
+            scopes=self.SCOPES,
+            redirect_uri=self.redirect_uri
+        )
+        
+        flow.fetch_token(code=authorization_code)
+        
+        # Save the credentials
+        with open('token.json', 'w') as token:
+            token.write(flow.credentials.to_json())
+        
+        self.service = build('docs', 'v1', credentials=flow.credentials)
         logger.info("Successfully authenticated with Google Docs API")
     
     def extract_doc_id_from_url(self, url: str) -> Optional[str]:
@@ -117,11 +154,30 @@ class GoogleDocsClient:
 
 def extract_text_from_google_docs(url_or_id: str, credentials_path: Optional[str] = None) -> str:
     """Convenience function to extract text from a Google Docs document"""
+    try:
+        client = GoogleDocsClient(credentials_path)
+        
+        # Extract document ID from URL or use as-is
+        doc_id = client.extract_doc_id_from_url(url_or_id)
+        if not doc_id:
+            raise ValueError(f"Could not extract document ID from: {url_or_id}")
+        
+        return client.get_document_text(doc_id)
+    except Exception as e:
+        if "OAuth authentication required" in str(e):
+            raise Exception(
+                "Google Docs authentication required. Please authenticate first using the web interface."
+            )
+        raise e
+
+
+def create_google_oauth_url(credentials_path: Optional[str] = None) -> str:
+    """Create OAuth URL for Google Docs authentication"""
     client = GoogleDocsClient(credentials_path)
-    
-    # Extract document ID from URL or use as-is
-    doc_id = client.extract_doc_id_from_url(url_or_id)
-    if not doc_id:
-        raise ValueError(f"Could not extract document ID from: {url_or_id}")
-    
-    return client.get_document_text(doc_id) 
+    return client.create_oauth_url()
+
+
+def authenticate_google_docs(authorization_code: str, credentials_path: Optional[str] = None) -> None:
+    """Authenticate with Google Docs using authorization code"""
+    client = GoogleDocsClient(credentials_path)
+    client.exchange_code_for_token(authorization_code) 

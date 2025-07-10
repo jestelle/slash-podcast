@@ -20,20 +20,25 @@ This guide will help you set up Google Docs integration for the PDF-to-Podcast a
 
 1. Go to "APIs & Services" > "Credentials"
 2. Click "Create Credentials" > "OAuth 2.0 Client IDs"
-3. Choose "Desktop application" as the application type
+3. Choose "Web application" as the application type
 4. Give it a name (e.g., "PDF-to-Podcast")
-5. Click "Create"
-6. Download the JSON file and rename it to `credentials.json`
-7. Place `credentials.json` in the root directory of this project
+5. Add authorized redirect URIs:
+   - For local development: `http://localhost:7860/oauth2callback`
+   - For production: `https://your-domain.com/oauth2callback`
+6. Click "Create"
+7. Download the JSON file and rename it to `credentials.json`
+8. Place `credentials.json` in the root directory of this project
 
-## Step 3: First Run Authentication
+## Step 3: Web Application Authentication
 
-When you first run the application with a Google Docs URL:
+For web applications, the authentication flow is different:
 
-1. A browser window will open
-2. Sign in with your Google account
-3. Grant permission to access your Google Docs
-4. The application will save the authentication token for future use
+1. The application will provide an OAuth URL
+2. Click the URL to open Google's authorization page
+3. Sign in with your Google account and grant permissions
+4. You'll be redirected back to the application with an authorization code
+5. The application will exchange the code for access tokens
+6. Tokens are saved for future use
 
 ## Step 4: Using Google Docs URLs
 

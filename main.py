@@ -312,17 +312,14 @@ demo.queue(
     default_concurrency_limit=20,
 )
 
-# Mount the app
-app = gr.mount_gradio_app(app, demo, path="/")
-
 # Test route to verify API endpoints are working
-@app.get("/api/test")
+@app.get("/oauth-test")
 async def test_api():
     """Test route to verify API endpoints are accessible"""
     return {"message": "API is working!"}
 
-# OAuth callback route - defined after Gradio app is mounted
-@app.get("/api/oauth2callback")
+# OAuth callback route - defined before Gradio app is mounted
+@app.get("/oauth2callback")
 async def oauth_callback(code: str = None, error: str = None):
     """Handle OAuth callback from Google"""
     logger.info(f"OAuth callback received - code: {code is not None}, error: {error}")
@@ -347,5 +344,9 @@ async def oauth_callback(code: str = None, error: str = None):
         logger.error(f"Authentication failed: {str(e)}")
         return {"error": f"Authentication failed: {str(e)}"}
 
+# Mount the Gradio app after defining all routes
+app = gr.mount_gradio_app(app, demo, path="/")
+
 if __name__ == "__main__":
-    demo.launch(show_api=False)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=7860)

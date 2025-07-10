@@ -23,8 +23,8 @@ This guide will help you set up Google Docs integration for the PDF-to-Podcast a
 3. Choose "Web application" as the application type
 4. Give it a name (e.g., "PDF-to-Podcast")
 5. Add authorized redirect URIs:
-   - For local development: `http://localhost:7860/api/oauth2callback`
-   - For production: `https://your-domain.com/api/oauth2callback`
+   - For local development: `http://localhost:7860/oauth2callback`
+   - For production: `https://your-domain.com/oauth2callback`
 6. Click "Create"
 7. Download the JSON file and rename it to `credentials.json`
 8. Place `credentials.json` in the root directory of this project

@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import List, Literal
+from typing import List, Literal, Union
 
 import gradio as gr
 import sentry_sdk
@@ -17,6 +17,8 @@ from promptic import llm
 from pydantic import BaseModel, ValidationError
 from pypdf import PdfReader
 from tenacity import retry, retry_if_exception_type, wait_exponential, stop_after_attempt
+
+from google_docs import extract_text_from_google_docs
 
 
 if sentry_dsn := os.getenv("SENTRY_DSN"):
@@ -66,14 +68,49 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             return file.getvalue()
 
 
-def generate_audio(file: str, openai_api_key: str = None) -> bytes:
+def generate_audio_from_inputs(pdf_file, google_docs_url: str, openai_api_key: str = None):
+    """Wrapper function to handle both PDF files and Google Docs URLs"""
+    
+    # Determine which input to use
+    if google_docs_url and google_docs_url.strip():
+        # Use Google Docs URL
+        return generate_audio(google_docs_url.strip(), openai_api_key)
+    elif pdf_file:
+        # Use PDF file
+        return generate_audio(pdf_file.name, openai_api_key)
+    else:
+        raise gr.Error("Please provide either a PDF file or a Google Docs URL")
+
+
+def generate_audio(file_or_url: Union[str, Path], openai_api_key: str = None) -> bytes:
 
     if not (os.getenv("OPENAI_API_KEY") or openai_api_key):
         raise gr.Error("OpenAI API key is required")
 
-    with Path(file).open("rb") as f:
-        reader = PdfReader(f)
-        text = "\n\n".join([page.extract_text() for page in reader.pages])
+    # Determine if input is a Google Docs URL or a file path
+    file_or_url_str = str(file_or_url)
+    
+    if file_or_url_str.startswith(('http://', 'https://')) and 'docs.google.com' in file_or_url_str:
+        # Handle Google Docs URL
+        try:
+            logger.info(f"Processing Google Docs URL: {file_or_url_str}")
+            text = extract_text_from_google_docs(file_or_url_str)
+            if not text.strip():
+                raise gr.Error("No text content found in the Google Docs document")
+        except Exception as e:
+            logger.error(f"Error processing Google Docs: {e}")
+            raise gr.Error(f"Failed to process Google Docs: {str(e)}")
+    else:
+        # Handle PDF file
+        try:
+            with Path(file_or_url).open("rb") as f:
+                reader = PdfReader(f)
+                text = "\n\n".join([page.extract_text() for page in reader.pages])
+            if not text.strip():
+                raise gr.Error("No text content found in the PDF")
+        except Exception as e:
+            logger.error(f"Error processing PDF: {e}")
+            raise gr.Error(f"Failed to process PDF: {str(e)}")
 
     @retry(retry=retry_if_exception_type(ValidationError))
     @llm(
@@ -165,11 +202,17 @@ demo = gr.Interface(
     title="PDF to Podcast",
     theme="origin",
     description=Path("description.md").read_text(),
-    fn=generate_audio,
-    examples=[[str(p)] for p in Path("examples").glob("*.pdf")],
+    fn=generate_audio_from_inputs,
+    examples=[[str(p), "", None] for p in Path("examples").glob("*.pdf")],
     inputs=[
         gr.File(
-            label="PDF",
+            label="PDF File (optional)",
+            visible=True,
+        ),
+        gr.Textbox(
+            label="Google Docs URL (optional)",
+            placeholder="https://docs.google.com/document/d/...",
+            visible=True,
         ),
         gr.Textbox(
             label="OpenAI API Key",

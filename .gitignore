@@ -164,3 +164,7 @@ cython_debug/
 .gradio/
 .DS_Store
 gradio_cached_examples/
+
+# Google API credentials
+credentials.json
+token.json

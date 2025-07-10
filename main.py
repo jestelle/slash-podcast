@@ -28,24 +28,7 @@ app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# OAuth callback route - using a different path to avoid conflicts
-@app.get("/api/oauth2callback")
-async def oauth_callback(code: str = None, error: str = None):
-    """Handle OAuth callback from Google"""
-    if error:
-        return {"error": error}
-    
-    if not code:
-        return {"error": "No authorization code received"}
-    
-    try:
-        authenticate_google_docs(code)
-        return {
-            "success": True,
-            "message": "Successfully authenticated with Google Docs! You can now close this window and return to the main application."
-        }
-    except Exception as e:
-        return {"error": f"Authentication failed: {str(e)}"}
+
 
 
 class DialogueItem(BaseModel):
@@ -331,6 +314,38 @@ demo.queue(
 
 # Mount the app
 app = gr.mount_gradio_app(app, demo, path="/")
+
+# Test route to verify API endpoints are working
+@app.get("/api/test")
+async def test_api():
+    """Test route to verify API endpoints are accessible"""
+    return {"message": "API is working!"}
+
+# OAuth callback route - defined after Gradio app is mounted
+@app.get("/api/oauth2callback")
+async def oauth_callback(code: str = None, error: str = None):
+    """Handle OAuth callback from Google"""
+    logger.info(f"OAuth callback received - code: {code is not None}, error: {error}")
+    
+    if error:
+        logger.error(f"OAuth error: {error}")
+        return {"error": error}
+    
+    if not code:
+        logger.error("No authorization code received")
+        return {"error": "No authorization code received"}
+    
+    try:
+        logger.info("Attempting to authenticate with Google Docs")
+        authenticate_google_docs(code)
+        logger.info("Successfully authenticated with Google Docs")
+        return {
+            "success": True,
+            "message": "Successfully authenticated with Google Docs! You can now close this window and return to the main application."
+        }
+    except Exception as e:
+        logger.error(f"Authentication failed: {str(e)}")
+        return {"error": f"Authentication failed: {str(e)}"}
 
 if __name__ == "__main__":
     demo.launch(show_api=False)

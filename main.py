@@ -93,12 +93,12 @@ def check_google_auth_status():
         # Try to create a client - this will fail if not authenticated
         from google_docs import GoogleDocsClient
         client = GoogleDocsClient()
-        return "✅ Authenticated with Google Docs", True
+        return "✅ Authenticated with Google Docs"
     except Exception as e:
         if "OAuth authentication required" in str(e) or "Credentials file" in str(e):
-            return "❌ Not authenticated with Google Docs", False
+            return "❌ Not authenticated with Google Docs"
         else:
-            return f"❌ Error: {str(e)}", False
+            return f"❌ Error: {str(e)}"
 
 
 def get_google_auth_url():
@@ -112,9 +112,9 @@ def get_google_auth_url():
         
         After clicking, you'll be redirected to Google's authorization page. 
         Once you authorize, you'll be redirected back to this application.
-        """, auth_url
+        """
     except Exception as e:
-        return f"❌ Error creating auth URL: {str(e)}", ""
+        return f"❌ Error creating auth URL: {str(e)}"
 
 
 def handle_google_auth_callback(auth_code: str):

@@ -173,11 +173,42 @@ def extract_text_from_google_docs(url_or_id: str, credentials_path: Optional[str
 
 def create_google_oauth_url(credentials_path: Optional[str] = None) -> str:
     """Create OAuth URL for Google Docs authentication"""
-    client = GoogleDocsClient(credentials_path)
-    return client.create_oauth_url()
+    credentials_path = credentials_path or 'credentials.json'
+    
+    if not os.path.exists(credentials_path):
+        raise FileNotFoundError(f"Credentials file '{credentials_path}' not found.")
+    
+    flow = Flow.from_client_secrets_file(
+        credentials_path,
+        scopes=['https://www.googleapis.com/auth/documents.readonly'],
+        redirect_uri='http://localhost:7860/oauth2callback'
+    )
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    
+    return authorization_url
 
 
 def authenticate_google_docs(authorization_code: str, credentials_path: Optional[str] = None) -> None:
     """Authenticate with Google Docs using authorization code"""
-    client = GoogleDocsClient(credentials_path)
-    client.exchange_code_for_token(authorization_code) 
+    credentials_path = credentials_path or 'credentials.json'
+    
+    if not os.path.exists(credentials_path):
+        raise FileNotFoundError(f"Credentials file '{credentials_path}' not found.")
+    
+    flow = Flow.from_client_secrets_file(
+        credentials_path,
+        scopes=['https://www.googleapis.com/auth/documents.readonly'],
+        redirect_uri='http://localhost:7860/oauth2callback'
+    )
+    
+    flow.fetch_token(code=authorization_code)
+    
+    # Save the credentials
+    with open('token.json', 'w') as token:
+        token.write(flow.credentials.to_json())
+    
+    logger.info("Successfully authenticated with Google Docs API") 

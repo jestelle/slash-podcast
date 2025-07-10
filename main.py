@@ -12,11 +12,11 @@ import sentry_sdk
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from promptic import llm
 from pydantic import BaseModel, ValidationError
 from pypdf import PdfReader
-from tenacity import retry, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, wait_exponential, stop_after_attempt
 
 
 if sentry_dsn := os.getenv("SENTRY_DSN"):
@@ -45,6 +45,11 @@ class Dialogue(BaseModel):
     dialogue: List[DialogueItem]
 
 
+@retry(
+    retry=retry_if_exception_type(RateLimitError),
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    stop=stop_after_attempt(5)
+)
 def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
     client = OpenAI(
         api_key=api_key or os.getenv("OPENAI_API_KEY"),
@@ -115,18 +120,24 @@ def generate_audio(file: str, openai_api_key: str = None) -> bytes:
 
     characters = 0
 
-    with cf.ThreadPoolExecutor() as executor:
-        futures = []
-        for line in llm_output.dialogue:
-            transcript_line = f"{line.speaker}: {line.text}"
-            future = executor.submit(get_mp3, line.text, line.voice, openai_api_key)
-            futures.append((future, transcript_line))
-            characters += len(line.text)
-
-        for future, transcript_line in futures:
-            audio_chunk = future.result()
+    # Process audio sequentially to avoid rate limits
+    for line in llm_output.dialogue:
+        transcript_line = f"{line.speaker}: {line.text}"
+        logger.info(f"Generating audio for: {line.speaker}")
+        
+        try:
+            audio_chunk = get_mp3(line.text, line.voice, openai_api_key)
             audio += audio_chunk
             transcript += transcript_line + "\n\n"
+            characters += len(line.text)
+            
+            # Add a small delay between requests to avoid rate limits
+            time.sleep(0.2)  # 200ms delay between requests
+            
+        except Exception as e:
+            logger.error(f"Error generating audio for {line.speaker}: {e}")
+            # Continue with next line instead of failing completely
+            transcript += f"{transcript_line} [AUDIO GENERATION FAILED]\n\n"
 
     logger.info(f"Generated {characters} characters of audio")
 
